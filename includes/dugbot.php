@@ -35,6 +35,11 @@ if (isset($_POST['clearChat'])) {
     exit;
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['audio_file'])) {
+    include 'talk.php'; // The audio chat functionality PHP file
+    exit;
+}
+
 // Check if a message was sent
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['userMessage']) && !empty($_POST['userMessage'])) {
     $userMessage = trim($_POST['userMessage']);
@@ -141,6 +146,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['userMessage']) && !emp
             <div class="chat-message placeholder-message">...</div>
             <?php endif; ?>
         </div>
+        <div>
+            <button id="startRecording" onclick="startRecording()">Start Recording</button>
+            <button id="stopRecording" onclick="stopRecording()" disabled>Stop Recording</button>
+        </div>
+        <div id="chatResponse"></div>
+        <audio id="audioPlayer" style="display: none;" controls></audio>
+
     </div>
 
     <script>
@@ -207,6 +219,73 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['userMessage']) && !emp
     window.addEventListener('resize', handleScroll);
     window.addEventListener('DOMContentLoaded', handleScroll);
     </script>
+    <script>
+    let mediaRecorder;
+    let audioChunks = [];
+    let isRecording = false;
+
+    function startRecording() {
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            navigator.mediaDevices.getUserMedia({
+                audio: true
+            }).then((stream) => {
+                mediaRecorder = new MediaRecorder(stream);
+
+                mediaRecorder.ondataavailable = function(event) {
+                    audioChunks.push(event.data);
+                };
+
+                mediaRecorder.start();
+                isRecording = true;
+                document.getElementById("startRecording").disabled = true;
+                document.getElementById("stopRecording").disabled = false;
+
+                setTimeout(() => {
+                    if (isRecording) stopRecording();
+                }, 10000);
+            }).catch(console.error);
+        } else {
+            console.log("Browser does not support audio recording.");
+        }
+    }
+
+    function stopRecording() {
+        if (isRecording) {
+            mediaRecorder.stop();
+            isRecording = false;
+            document.getElementById("startRecording").disabled = false;
+            document.getElementById("stopRecording").disabled = true;
+
+            setTimeout(() => {
+                const audioBlob = new Blob(audioChunks, {
+                    type: "audio/webm"
+                });
+                const formData = new FormData();
+                formData.append("audio_file", audioBlob, "audio.webm");
+
+                fetch("dugbot.php", {
+                        method: "POST",
+                        body: formData,
+                    })
+                    .then((response) => response.json())
+                    .then((data) => {
+                        const responseText = data.textResponse || "No response.";
+                        const audioUrl = data.audioUrl || "";
+
+                        document.getElementById("chatResponse").innerText = responseText;
+                        const audioPlayer = document.getElementById("audioPlayer");
+                        if (audioUrl) {
+                            audioPlayer.src = audioUrl;
+                            audioPlayer.style.display = "block";
+                            audioPlayer.play();
+                        }
+                    })
+                    .catch(console.error);
+            }, 500);
+        }
+    }
+    </script>
+
 
 </body>
 
