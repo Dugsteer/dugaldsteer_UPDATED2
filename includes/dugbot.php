@@ -1,9 +1,7 @@
 <?php
-
-
 // Include API key and necessary chat variables
 include "apikey.php";
-include "prompts.php";  // Ensure the prompts are included
+include "prompts.php"; // Ensure the prompts are included
 
 // Start the session to manage chat data
 session_start();
@@ -35,6 +33,7 @@ if (isset($_POST['clearChat'])) {
     exit;
 }
 
+// Handle audio file upload and processing
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['audio_file'])) {
     include 'talk.php'; // The audio chat functionality PHP file
     exit;
@@ -67,7 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['userMessage']) && !emp
 
     // Prepare the data for the API request
     $postData = [
-        "model" => "gpt-4o-mini", 
+        "model" => "gpt-4o-mini",
         "messages" => [
             ["role" => "user", "content" => $userMessage]
         ]
@@ -112,7 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['userMessage']) && !emp
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Basic HTML Page</title>
+    <title>DugBot AI Chat</title>
 </head>
 
 <body>
@@ -121,7 +120,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['userMessage']) && !emp
 
     <div id="toggleText" style="display: none;">
         <div id="picture">
-            <img src="img/Dugwebpic.webp" alt="Chat Header Image" title="" class="chat-header-img">
+            <img src="img/Dugwebpic.webp" alt="Chat Header Image" class="chat-header-img">
         </div>
         <div class="form-container">
             <form method="post" action="indexnew.php?chatting=true" style="margin-bottom: 10px;">
@@ -152,8 +151,116 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['userMessage']) && !emp
         </div>
         <div id="chatResponse"></div>
         <audio id="audioPlayer" style="display: none;" controls></audio>
-
     </div>
+
+    <script>
+    let mediaRecorder;
+    let audioChunks = [];
+    let isRecording = false;
+
+    // Start recording audio
+    function startRecording() {
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            navigator.mediaDevices.getUserMedia({
+                    audio: true
+                })
+                .then((stream) => {
+                    // Create a MediaRecorder for the audio stream
+                    mediaRecorder = new MediaRecorder(stream);
+
+                    // Store audio data when available
+                    mediaRecorder.ondataavailable = (event) => {
+                        audioChunks.push(event.data);
+                    };
+
+                    // Start recording
+                    mediaRecorder.start();
+                    isRecording = true;
+
+                    // Update button states
+                    document.getElementById("startRecording").disabled = true;
+                    document.getElementById("stopRecording").disabled = false;
+
+                    // Automatically stop recording after 10 seconds
+                    setTimeout(() => {
+                        if (isRecording) stopRecording();
+                    }, 10000);
+                })
+                .catch((error) => {
+                    console.error("Microphone access denied or not supported:", error);
+                    alert("Unable to access microphone. Please check permissions.");
+                });
+        } else {
+            console.log("Audio recording is not supported in this browser.");
+            alert("Audio recording is not supported in this browser.");
+        }
+    }
+
+    // Stop recording audio
+    function stopRecording() {
+        if (isRecording) {
+            mediaRecorder.stop();
+            isRecording = false;
+
+            // Update button states
+            document.getElementById("startRecording").disabled = false;
+            document.getElementById("stopRecording").disabled = true;
+
+            // Handle the recorded audio after a short delay
+            setTimeout(() => {
+                const audioBlob = new Blob(audioChunks, {
+                    type: "audio/webm"
+                });
+                const formData = new FormData();
+                formData.append("audio_file", audioBlob, "audio.webm");
+
+                // Send audio to the server
+                fetch("https://www.anglesmontalt.com/dugaldsteer/includes/dugbot.php", {
+                        method: "POST",
+                        body: formData,
+                    })
+                    .then((response) => {
+                        console.log("Server Response Object:", response); // Log the full response object
+                        return response.text(); // Get the response as plain text
+                    })
+                    .then((data) => {
+                        console.log("Raw Data Received:", data); // Log the raw data
+                        try {
+                            // Attempt to parse the raw data as JSON
+                            const jsonData = JSON.parse(data);
+                            console.log("Parsed JSON Data:", jsonData);
+
+                            // Process the JSON data
+                            const responseText = jsonData.textResponse || "No response.";
+                            document.getElementById("chatResponse").innerText = responseText;
+
+                            const audioUrl = jsonData.audioUrl || "";
+                            const audioPlayer = document.getElementById("audioPlayer");
+                            if (audioUrl) {
+                                audioPlayer.src = audioUrl;
+                                audioPlayer.style.display = "block";
+                                audioPlayer.play();
+                            }
+                        } catch (error) {
+                            // If parsing fails, log and handle the error
+                            console.error("JSON Parsing Error:", error);
+                            console.error("Invalid JSON data received:", data);
+                            document.getElementById("chatResponse").innerText =
+                                "Error: Server returned invalid response. Please try again.";
+                        }
+                    })
+                    .catch((error) => {
+                        // Handle fetch errors (e.g., network issues)
+                        console.error("Fetch Error:", error);
+                        document.getElementById("chatResponse").innerText =
+                            "Error: Unable to connect to the server. Please try again.";
+                    });
+
+            }, 500);
+        }
+    }
+    </script>
+
 
     <script>
     window.addEventListener('DOMContentLoaded', function() {
@@ -180,112 +287,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['userMessage']) && !emp
                 toggleButton.textContent = 'Chat to DugBot AI';
             }
         });
-
-        // Function to scroll to the bottom of the chat container
-        function scrollToBottom() {
-            const chatContainer = document.querySelector('.chat-container');
-            chatContainer.scrollTop = chatContainer.scrollHeight;
-        }
-
-        // Scroll to the bottom when the page loads
-        scrollToBottom();
     });
     </script>
-
-    <script>
-    const toggleButton = document.querySelector('.toggleButton');
-
-    // Function to handle the scroll logic
-    function handleScroll() {
-        const scrollPosition = window.pageYOffset + window.innerHeight;
-        const documentHeight = document.documentElement.scrollHeight;
-
-        // Only apply on small screens (less than 900px width)
-        if (window.innerWidth < 900) {
-            // Appear at the top (when less than 1000px scrolled)
-            // Disappear after 1000px scrolled down and reappear near the bottom
-            if ((documentHeight - scrollPosition < 800) || (window.scrollY < 600)) {
-                toggleButton.style.display = 'block'; // Show the button
-            } else {
-                toggleButton.style.display = 'none'; // Hide the button
-            }
-        } else {
-            toggleButton.style.display = 'block'; // Always show on larger screens
-        }
-    }
-
-    // Add event listeners for scroll and resize events
-    window.addEventListener('scroll', handleScroll);
-    window.addEventListener('resize', handleScroll);
-    window.addEventListener('DOMContentLoaded', handleScroll);
-    </script>
-    <script>
-    let mediaRecorder;
-    let audioChunks = [];
-    let isRecording = false;
-
-    function startRecording() {
-        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-            navigator.mediaDevices.getUserMedia({
-                audio: true
-            }).then((stream) => {
-                mediaRecorder = new MediaRecorder(stream);
-
-                mediaRecorder.ondataavailable = function(event) {
-                    audioChunks.push(event.data);
-                };
-
-                mediaRecorder.start();
-                isRecording = true;
-                document.getElementById("startRecording").disabled = true;
-                document.getElementById("stopRecording").disabled = false;
-
-                setTimeout(() => {
-                    if (isRecording) stopRecording();
-                }, 10000);
-            }).catch(console.error);
-        } else {
-            console.log("Browser does not support audio recording.");
-        }
-    }
-
-    function stopRecording() {
-        if (isRecording) {
-            mediaRecorder.stop();
-            isRecording = false;
-            document.getElementById("startRecording").disabled = false;
-            document.getElementById("stopRecording").disabled = true;
-
-            setTimeout(() => {
-                const audioBlob = new Blob(audioChunks, {
-                    type: "audio/webm"
-                });
-                const formData = new FormData();
-                formData.append("audio_file", audioBlob, "audio.webm");
-
-                fetch("dugbot.php", {
-                        method: "POST",
-                        body: formData,
-                    })
-                    .then((response) => response.json())
-                    .then((data) => {
-                        const responseText = data.textResponse || "No response.";
-                        const audioUrl = data.audioUrl || "";
-
-                        document.getElementById("chatResponse").innerText = responseText;
-                        const audioPlayer = document.getElementById("audioPlayer");
-                        if (audioUrl) {
-                            audioPlayer.src = audioUrl;
-                            audioPlayer.style.display = "block";
-                            audioPlayer.play();
-                        }
-                    })
-                    .catch(console.error);
-            }, 500);
-        }
-    }
-    </script>
-
 
 </body>
 
