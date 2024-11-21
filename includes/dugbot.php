@@ -1,6 +1,5 @@
 <?php
-// Disable error reporting temporarily
-error_reporting(0);
+
 
 // Include API key and necessary chat variables
 include "apikey.php";
