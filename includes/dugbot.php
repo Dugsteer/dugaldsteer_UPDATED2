@@ -112,12 +112,54 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['userMessage']) && !emp
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DugBot AI Chat</title>
+    <style>
+    /* Additional CSS for buttons and layout */
+    #streamingResponse {
+        border: 1px solid #ddd;
+        padding: 10px;
+        margin-top: 10px;
+        background-color: #f1f1f1;
+        border-radius: 4px;
+        height: 100px;
+        overflow-y: auto;
+        font-family: monospace;
+    }
+
+    #toggleText {
+        position: fixed;
+        bottom: 5px;
+        right: 5px;
+        width: 400px;
+        height: 600px;
+        border-radius: 8px;
+        background-color: rgb(174, 94, 94);
+        padding: 15px;
+        z-index: 1000;
+        overflow-y: auto;
+    }
+
+    button {
+        margin: 5px 0;
+        padding: 10px 20px;
+        background-color: #c60c30;
+        color: #F5F5F5;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+    }
+
+    button:hover {
+        background-color: #a82127;
+    }
+
+    </style>
 </head>
 
 <body>
-
+    <!-- Toggle Button -->
     <button class="toggleButton" id="toggleButton">DugBot AI Chat</button>
 
+    <!-- Chat Popup -->
     <div id="toggleText" style="display: none;">
         <div id="picture">
             <img src="img/Dugwebpic.webp" alt="Chat Header Image" class="chat-header-img">
@@ -145,7 +187,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['userMessage']) && !emp
             <div class="chat-message placeholder-message">...</div>
             <?php endif; ?>
         </div>
+
+        <!-- Streaming and Recording Buttons -->
         <div>
+            <h3>Streaming Chat</h3>
+            <button id="startStreaming" onclick="startStreaming()">Stream Chat</button>
+            <div id="streamingResponse"></div>
+        </div>
+        <div>
+            <h3>Audio Recording</h3>
             <button id="startRecording" onclick="startRecording()">Start Recording</button>
             <button id="stopRecording" onclick="stopRecording()" disabled>Stop Recording</button>
         </div>
@@ -153,35 +203,48 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['userMessage']) && !emp
         <audio id="audioPlayer" style="display: none;" controls></audio>
     </div>
 
+    <!-- JavaScript -->
     <script>
+    function startStreaming() {
+        const responseElement = document.getElementById("streamingResponse");
+        responseElement.textContent = ""; // Clear previous responses
+
+        const eventSource = new EventSource("talk.php?stream=true");
+
+        eventSource.onmessage = (event) => {
+            const chunk = event.data.trim();
+            if (chunk !== "[DONE]") {
+                responseElement.textContent += chunk + "\n";
+            } else {
+                eventSource.close();
+            }
+        };
+
+        eventSource.onerror = () => {
+            console.error("Streaming error occurred.");
+            eventSource.close();
+        };
+    }
+
     let mediaRecorder;
     let audioChunks = [];
     let isRecording = false;
 
-    // Start recording audio
     function startRecording() {
         if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
             navigator.mediaDevices.getUserMedia({
                     audio: true
                 })
                 .then((stream) => {
-                    // Create a MediaRecorder for the audio stream
                     mediaRecorder = new MediaRecorder(stream);
-
-                    // Store audio data when available
                     mediaRecorder.ondataavailable = (event) => {
                         audioChunks.push(event.data);
                     };
-
-                    // Start recording
                     mediaRecorder.start();
                     isRecording = true;
-
-                    // Update button states
                     document.getElementById("startRecording").disabled = true;
                     document.getElementById("stopRecording").disabled = false;
 
-                    // Automatically stop recording after 10 seconds
                     setTimeout(() => {
                         if (isRecording) stopRecording();
                     }, 10000);
@@ -191,22 +254,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['userMessage']) && !emp
                     alert("Unable to access microphone. Please check permissions.");
                 });
         } else {
-            console.log("Audio recording is not supported in this browser.");
             alert("Audio recording is not supported in this browser.");
         }
     }
 
-    // Stop recording audio
     function stopRecording() {
         if (isRecording) {
             mediaRecorder.stop();
             isRecording = false;
-
-            // Update button states
             document.getElementById("startRecording").disabled = false;
             document.getElementById("stopRecording").disabled = true;
 
-            // Handle the recorded audio after a short delay
             setTimeout(() => {
                 const audioBlob = new Blob(audioChunks, {
                     type: "audio/webm"
@@ -214,82 +272,55 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['userMessage']) && !emp
                 const formData = new FormData();
                 formData.append("audio_file", audioBlob, "audio.webm");
 
-                // Send audio to the server
-                fetch("https://www.anglesmontalt.com/dugaldsteer/includes/dugbot.php", {
+                fetch("talk.php", {
                         method: "POST",
                         body: formData,
                     })
-                    .then((response) => {
-                        console.log("Server Response Object:", response); // Log the full response object
-                        return response.text(); // Get the response as plain text
-                    })
+                    .then((response) => response.json())
                     .then((data) => {
-                        console.log("Raw Data Received:", data); // Log the raw data
-                        try {
-                            // Attempt to parse the raw data as JSON
-                            const jsonData = JSON.parse(data);
-                            console.log("Parsed JSON Data:", jsonData);
+                        document.getElementById("chatResponse").innerText = data.textResponse ||
+                            "No response.";
+                        const audioUrl = data.audioUrl || "";
+                        const audioPlayer = document.getElementById("audioPlayer");
 
-                            // Process the JSON data
-                            const responseText = jsonData.textResponse || "No response.";
-                            document.getElementById("chatResponse").innerText = responseText;
-
-                            const audioUrl = jsonData.audioUrl || "";
-                            const audioPlayer = document.getElementById("audioPlayer");
-                            if (audioUrl) {
-                                audioPlayer.src = audioUrl;
-                                audioPlayer.style.display = "block";
-                                audioPlayer.play();
-                            }
-                        } catch (error) {
-                            // If parsing fails, log and handle the error
-                            console.error("JSON Parsing Error:", error);
-                            console.error("Invalid JSON data received:", data);
-                            document.getElementById("chatResponse").innerText =
-                                "Error: Server returned invalid response. Please try again.";
+                        if (audioUrl) {
+                            audioPlayer.src = audioUrl;
+                            audioPlayer.style.display = "block";
+                            audioPlayer.play();
                         }
                     })
                     .catch((error) => {
-                        // Handle fetch errors (e.g., network issues)
-                        console.error("Fetch Error:", error);
+                        console.error("Error uploading audio:", error);
                         document.getElementById("chatResponse").innerText =
-                            "Error: Unable to connect to the server. Please try again.";
+                            "Error: Unable to process your request.";
                     });
-
             }, 500);
         }
     }
-    </script>
 
-
-    <script>
     window.addEventListener('DOMContentLoaded', function() {
         const toggleButton = document.getElementById('toggleButton');
         const toggleText = document.getElementById('toggleText');
 
-        // Check if URL has 'chatting=true'
         const urlParams = new URLSearchParams(window.location.search);
         const isChatting = urlParams.get('chatting') === 'true';
 
-        // If chatting=true in the URL, automatically open the chat
         if (isChatting) {
             toggleText.style.display = 'block';
             toggleButton.textContent = 'Hide Chat';
         }
 
-        // Toggle button to show/hide chat
         toggleButton.addEventListener('click', function() {
             if (toggleText.style.display === 'none') {
                 toggleText.style.display = 'block';
                 toggleButton.textContent = 'Hide Chat';
             } else {
                 toggleText.style.display = 'none';
-                toggleButton.textContent = 'Chat to DugBot AI';
+                toggleButton.textContent = 'DugBot AI Chat';
             }
         });
     });
     </script>
-
 </body>
 
 </html>
